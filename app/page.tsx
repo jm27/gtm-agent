@@ -108,8 +108,9 @@ export default function Home() {
   return (
     <div className="app-container">
       <header className="app-header">
+        <span className="tagline">Multi-Agent Orchestration</span>
         <h1>GTM Agent</h1>
-        <p>An AI-powered orchestration engine that coordinates specialized agents to build go-to-market strategies.</p>
+        <p className="subtitle text-body-lg">An AI-powered orchestration engine that coordinates specialized agents to build go-to-market strategies — market intel, personas, channel plans, and execution roadmaps.</p>
       </header>
 
       {step === "idle" && (
@@ -182,7 +183,7 @@ export default function Home() {
                 <div className={`agent-card-header ${agent.color}`}>
                   <span>{agent.icon}</span>
                   <span>{agent.label}</span>
-                  {agent.status === "active" && <span className="streaming-cursor" style={{ marginLeft: "auto", fontSize: "0.75rem", color: "var(--text-muted)" }}>streaming</span>}
+                  {agent.status === "active" && <span className="streaming-label">streaming<span className="streaming-cursor" /></span>}
                 </div>
                 <div className="agent-card-body">
                   {agent.output ? (
