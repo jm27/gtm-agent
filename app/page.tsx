@@ -53,24 +53,112 @@ export default function Home() {
     }, 15);
   }, []);
 
-  const runWorkflow = useCallback(() => {
+  const useCustom = !!customPrompt.trim();
+
+  const runWorkflow = useCallback(async () => {
     const scenario = scenarios.find(s => s.id === selectedId) || scenarios[0];
+    const query = useCustom ? customPrompt.trim() : scenario.title;
     setSelectedScenario(scenario);
     setStep("orchestrating");
     setAgents(AGENTS.map(a => ({ ...a, status: "queued" as const, output: "", streaming: false })));
     setSummary("");
 
-    // Phase 1: Orchestrator thinks
-    setTimeout(() => {
-      setOrchestratorMessage(`Analyzing: "${scenario.title}" — delegating to specialized agents...`);
-    }, 500);
+    // Try live LangGraph backend first
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
 
-    setTimeout(() => {
-      setOrchestratorMessage(`Analyzing: "${scenario.title}" — delegating to specialized agents... ✓`);
-      setStep("running");
+      if (res.ok) {
+        // Live mode — stream SSE from LangGraph
+        setOrchestratorMessage(`Analyzing: "${query}" — LangGraph orchestrator initializing...`);
 
-      // Phase 2: Run agents sequentially with streaming
-      const runAgent = (index: number) => {
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        if (!reader) throw new Error("No stream");
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (data === "done") continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              const { event, data: eventData } = parsed;
+
+              if (event === "orchestrator_start") {
+                setOrchestratorMessage(`Orchestrator initialized — delegating to agents...`);
+              }
+
+              if (event === "orchestrator_update") {
+                setStep("running");
+              }
+
+              // Map LangGraph node updates to agent cards
+              const agentMap: Record<string, string> = {
+                data_update: "data",
+                business_update: "business",
+                pm_update: "pm",
+              };
+
+              const agentId = agentMap[event];
+              if (agentId && eventData) {
+                const content = eventData.dataOutput || eventData.businessOutput || eventData.pmOutput || "";
+                setAgents(prev => prev.map(a => {
+                  if (a.id === agentId) {
+                    const isNew = a.status === "queued";
+                    return { ...a, status: "active", output: "", streaming: true };
+                  }
+                  if (a.id === agentId) {
+                    const done = Object.values(eventData).some((v: any) => typeof v === "string" && v.length > 200);
+                    return { ...a, status: done ? "done" : "active", output: "", streaming: !done };
+                  }
+                  return a;
+                }));
+              }
+
+              if (event === "workflow_complete") {
+                const { summary: ws, dataOutput, businessOutput, pmOutput } = eventData;
+                setAgents([
+                  { id: "data", label: "Data Agent", icon: "📊", color: "data", status: "done", output: dataOutput || "", streaming: false },
+                  { id: "business", label: "Business Agent", icon: "💼", color: "business", status: "done", output: businessOutput || "", streaming: false },
+                  { id: "pm", label: "Project Agent", icon: "📋", color: "pm", status: "done", output: pmOutput || "", streaming: false },
+                ]);
+                setSummary(ws || "");
+                setStep("done");
+                setOrchestratorMessage("Workflow complete — all agents finished ✓");
+              }
+            } catch { /* skip parse errors */ }
+          }
+        }
+        return;
+      }
+    } catch {
+      // API not available — fall through to demo mode
+    }
+
+    // Demo mode — simulated responses
+    setOrchestratorMessage(`Analyzing: "${scenario.title}" — delegating to specialized agents...`);
+
+    await new Promise(r => setTimeout(r, 500));
+
+    setOrchestratorMessage(`Analyzing: "${scenario.title}" — delegating to specialized agents... ✓`);
+    setStep("running");
+
+    // Run agents sequentially with streaming
+    const runAgent = (index: number) => {
         if (index >= AGENTS.length) {
           // All done — orchestrator summarizes
           setTimeout(() => {
@@ -100,10 +188,7 @@ export default function Home() {
       };
 
       runAgent(0);
-    }, 1200);
-  }, [selectedId, streamText]);
-
-  const useCustom = !!customPrompt.trim();
+  }, [selectedId, customPrompt, useCustom, streamText]);
 
   return (
     <div className="app-container">
