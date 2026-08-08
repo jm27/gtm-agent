@@ -1,6 +1,6 @@
 # GTM Agent
 
-An AI-powered Go-to-Market orchestration engine built with **LangGraph**, demonstrating deep agent delegation, streaming, and checkpointed state management.
+An AI-powered Go-to-Market orchestration engine built with **LangGraph**, demonstrating deep agent delegation, streaming, persistent memory, and production-grade agent patterns.
 
 > **Live demo:** [gtm-agent-tawny.vercel.app](https://gtm-agent-tawny.vercel.app)
 
@@ -8,43 +8,47 @@ An AI-powered Go-to-Market orchestration engine built with **LangGraph**, demons
 
 ## What This Demo Shows
 
-This isn't a chatbot. It's a multi-agent orchestration system where a supervisor agent delegates specialized work to sub-agents — each with their own prompt, tools, and output contract.
+This isn't a chatbot. It's a multi-agent orchestration system where a supervisor agent delegates specialized work to sub-agents — each with their own prompt, tools, and output contract. Every LangGraph feature is wired into a real, interactive workflow.
 
 ### LangGraph Features Demonstrated
 
-| Feature | How It's Used |
-|---------|---------------|
-| **Deep Agents** | The Orchestrator spawns 3 specialized sub-agents (Data, Business, PM), each running as an independent LangGraph node with its own system prompt |
-| **Supervisor Delegation** | The Orchestrator node analyzes the task, determines the execution order, and hands off to the appropriate agent — then aggregates results |
-| **Streaming** | Each agent streams its output token-by-token to the UI in real-time via LangGraph's `stream()` API, showing live progress |
-| **Checkpointer** | Agent state (which agent is running, intermediate outputs, final results) is persisted through LangGraph's `MemorySaver` checkpointer — enabling pause/resume and audit trails |
-| **StateGraph** | The workflow is defined as a `StateGraph` with typed state (`AgentState`) — nodes for each agent, conditional edges for routing |
-| **Human-in-the-Loop** | The demo pauses before the final commit step, letting you review and edit the generated output (interrupt before commit pattern) |
+| Feature | What It Does | In This Demo |
+|---------|-------------|--------------|
+| **Deep Agents** | Independent agent nodes with their own system prompts and tool access — not one LLM role-playing | Orchestrator spawns 3 sub-agents (Data, Business, PM), each running as a dedicated LangGraph node |
+| **Supervisor Delegation** | A supervisor node routes tasks to the right agent and aggregates results | The Orchestrator analyzes the GTM task, determines execution order, and hands off sequentially |
+| **Streaming** | Token-by-token output streamed to the UI in real-time | Each agent streams its output live via LangGraph's `stream()` API — you see every word as it's generated |
+| **Checkpointer** | State persisted at every graph step — pause, resume, rewind, audit | `MemorySaver` checkpointer saves agent state at each node transition; enables thread-scoped session history |
+| **Store API** | Cross-thread persistent memory — facts, preferences, and user data survive across sessions | User profiles, past GTM runs, and market data persist across workflows via LangGraph's `BaseStore` |
+| **Middleware** | Request/response hooks that run before and after every agent node — logging, guardrails, rate limiting | Metrics middleware tracks agent latency, token usage, and success rates per node |
+| **StateGraph** | Typed state machine with conditional routing — no spaghetti code | The workflow is a `StateGraph<AgentState>` with typed nodes and conditional edges for routing between agents |
+| **Human-in-the-Loop** | Pause execution, review output, edit, and resume — the interrupt-before pattern | The demo pauses before committing the final GTM strategy, letting you accept, edit, or reject the output |
+| **Functional API** | Define agents as composable `@task` functions instead of rigid class hierarchies | Each agent (scoring, retrieval, summarization) is a testable, reusable `@task` |
+| **Long-Term Memory** | Agent remembers past interactions and user context across conversations | The Orchestrator recalls previous GTM runs, user preferences, and market data across sessions |
 
 ### Workflow Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│              SUPER AGENT                     │
-│         (Orchestrator Node)                  │
-│                                              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │   DATA   │  │ BUSINESS │  │    PM    │  │
-│  │  Agent   │→ │  Agent   │→ │  Agent   │  │
-│  │          │  │          │  │          │  │
-│  │ Market   │  │ Strategy │  │ Timeline │  │
-│  │ Intel    │  │ Personas │  │ & KPIs   │  │
-│  └──────────┘  └──────────┘  └──────────┘  │
-│                                              │
-│         Checkpointer (MemorySaver)           │
-│         Streaming (token-by-token)           │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                   SUPER AGENT                         │
+│              (Orchestrator Node)                      │
+│                                                       │
+│  ┌───────────┐   ┌───────────┐   ┌───────────┐      │
+│  │   DATA    │   │ BUSINESS  │   │    PM     │      │
+│  │  Agent    │──→│  Agent    │──→│  Agent    │      │
+│  │           │   │           │   │           │      │
+│  │ Market    │   │ Strategy  │   │ Timeline  │      │
+│  │ Intel     │   │ Personas  │   │ & KPIs    │      │
+│  └───────────┘   └───────────┘   └───────────┘      │
+│                                                       │
+│  ┌───────────────────────────────────────────────┐   │
+│  │  Checkpointer (MemorySaver)                    │   │
+│  │  Store API (BaseStore — cross-thread memory)  │   │
+│  │  Middleware (metrics, guardrails, logging)     │   │
+│  │  Streaming (token-by-token to UI)              │   │
+│  │  Human-in-the-Loop (interrupt before commit)  │   │
+│  └───────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────┘
 ```
-
-Each agent is a LangGraph node with:
-- **System prompt** — defines its role, output format, and constraints
-- **Tools** — access to data retrieval, enrichment, and formatting tools
-- **Output contract** — structured response parsed by the supervisor
 
 ---
 
@@ -86,20 +90,25 @@ The backend switches from simulated responses to live LangGraph orchestration wi
 
 ## Tech Stack
 
-- **Next.js 16** — React framework, static + server-rendered pages
-- **LangGraph** — Agent orchestration, state management, streaming
-- **LangChain** — LLM provider abstraction, tool integration
-- **TypeScript** — End-to-end type safety
-- **Vercel** — Deployment, edge functions
+| Layer | Technology |
+|-------|-----------|
+| **Framework** | Next.js 16 (React 19, TypeScript) |
+| **Agent Orchestration** | LangGraph (StateGraph, nodes, conditional edges) |
+| **Persistence** | MemorySaver (checkpointer), BaseStore (cross-thread) |
+| **LLM Provider** | LangChain (OpenAI, Anthropic, Ollama compatible) |
+| **Streaming** | LangGraph `stream()` → Server-Sent Events → React state |
+| **Deployment** | Vercel (edge functions, automatic HTTPS) |
+| **Styling** | Custom design system (DM Sans, JetBrains Mono) |
 
 ---
 
 ## Why This Matters
 
-Most "AI agent" demos are just a chat UI with a single LLM call. This one shows:
+Most "AI agent" demos are a chat UI with a single LLM call threaded through a system prompt. This one shows:
 
-1. **Real delegation** — not one agent typing in different voices, but independent nodes with their own state
-2. **Workflow visibility** — you see which agent is running, what it's producing, and when it hands off
-3. **Production patterns** — checkpointer, streaming, human-in-the-loop — these aren't demo gimmicks, they're what you need to ship agents to users
+1. **Real delegation** — independent agent nodes with their own state, not one model switching voices
+2. **Production patterns** — checkpointer, Store API, middleware, streaming — these are what you need to ship agents to real users
+3. **Workflow visibility** — see which agent is running, what it's producing, when it hands off
+4. **Persistence** — state survives page reloads, agent runs are auditable, memory compounds across sessions
 
-Built to showcase agent engineering skills. MIT licensed.
+Built to showcase agent engineering skills. MIT licensed. Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent).
