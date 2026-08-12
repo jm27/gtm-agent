@@ -129,6 +129,13 @@ export default function Home() {
                 }));
               }
 
+              if (event === "error") {
+                const msg = eventData?.message || "Workflow failed";
+                console.error("[GTM-Agent] Frontend received error:", msg);
+                setOrchestratorMessage(`❌ Error: ${msg}`);
+                setStep("done");
+              }
+
               if (event === "workflow_complete") {
                 const { summary: ws, dataOutput, businessOutput, pmOutput } = eventData;
                 setAgents([

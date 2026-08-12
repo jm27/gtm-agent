@@ -132,59 +132,84 @@ function createModel() {
 
 // ── Agent Nodes ───────────────────────────────────
 async function orchestratorNode(state: typeof AgentState.State) {
-  const model = createModel();
-  const output = state.dataOutput && state.businessOutput && state.pmOutput;
-
-  if (output) {
-    const response = await model.invoke([
-      new SystemMessage(ORCHESTRATOR_PROMPT),
-      new HumanMessage(`Data Agent:\n${state.dataOutput}\n\nBusiness Agent:\n${state.businessOutput}\n\nPM Agent:\n${state.pmOutput}\n\nWrite an executive summary.`),
-    ]);
-    return { summary: typeof response.content === "string" ? response.content : JSON.stringify(response.content) };
-  }
-
+  console.log("[GTM-Agent] Orchestrator node started");
+  // First entry: route to Data agent
+  console.log("[GTM-Agent] Orchestrator routing to Data agent");
   return { currentAgent: "data" };
 }
 
 function routeAfterOrchestrator(state: typeof AgentState.State): string {
-  if (state.summary) return END;
-  return state.currentAgent;
+  const route = state.currentAgent || "data";
+  console.log(`[GTM-Agent] Routing from orchestrator → ${route}`);
+  return route;
 }
 
 async function dataAgentNode(state: typeof AgentState.State) {
-  const model = createModel();
-  const response = await model.invoke([
-    new SystemMessage(DATA_PROMPT),
-    new HumanMessage(`Analyze this GTM scenario:\n\n${state.query}`),
-  ]);
-  return {
-    dataOutput: typeof response.content === "string" ? response.content : JSON.stringify(response.content),
-    currentAgent: "business",
-  };
+  console.log("[GTM-Agent] Data agent started — calling LLM...");
+  try {
+    const model = createModel();
+    const response = await model.invoke([
+      new SystemMessage(DATA_PROMPT),
+      new HumanMessage(`Analyze this GTM scenario:\n\n${state.query}`),
+    ]);
+    const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+    console.log(`[GTM-Agent] Data agent complete (${content.length} chars)`);
+    return { dataOutput: content, currentAgent: "business" };
+  } catch (err: any) {
+    console.error("[GTM-Agent] Data agent FAILED:", err.message || err);
+    throw err;
+  }
 }
 
 async function businessAgentNode(state: typeof AgentState.State) {
-  const model = createModel();
-  const response = await model.invoke([
-    new SystemMessage(BUSINESS_PROMPT),
-    new HumanMessage(`Market intelligence:\n${state.dataOutput}\n\nOriginal scenario: ${state.query}\n\nBuild a GTM strategy.`),
-  ]);
-  return {
-    businessOutput: typeof response.content === "string" ? response.content : JSON.stringify(response.content),
-    currentAgent: "pm",
-  };
+  console.log("[GTM-Agent] Business agent started — calling LLM...");
+  try {
+    const model = createModel();
+    const response = await model.invoke([
+      new SystemMessage(BUSINESS_PROMPT),
+      new HumanMessage(`Market intelligence:\n${state.dataOutput}\n\nOriginal scenario: ${state.query}\n\nBuild a GTM strategy.`),
+    ]);
+    const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+    console.log(`[GTM-Agent] Business agent complete (${content.length} chars)`);
+    return { businessOutput: content, currentAgent: "pm" };
+  } catch (err: any) {
+    console.error("[GTM-Agent] Business agent FAILED:", err.message || err);
+    throw err;
+  }
 }
 
 async function pmAgentNode(state: typeof AgentState.State) {
-  const model = createModel();
-  const response = await model.invoke([
-    new SystemMessage(PM_PROMPT),
-    new HumanMessage(`Business strategy:\n${state.businessOutput}\n\nOriginal scenario: ${state.query}\n\nBuild an execution plan.`),
-  ]);
-  return {
-    pmOutput: typeof response.content === "string" ? response.content : JSON.stringify(response.content),
-    currentAgent: "orchestrator",
-  };
+  console.log("[GTM-Agent] PM agent started — calling LLM...");
+  try {
+    const model = createModel();
+    const response = await model.invoke([
+      new SystemMessage(PM_PROMPT),
+      new HumanMessage(`Business strategy:\n${state.businessOutput}\n\nOriginal scenario: ${state.query}\n\nBuild an execution plan.`),
+    ]);
+    const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+    console.log(`[GTM-Agent] PM agent complete (${content.length} chars)`);
+    return { pmOutput: content, currentAgent: "summary" };
+  } catch (err: any) {
+    console.error("[GTM-Agent] PM agent FAILED:", err.message || err);
+    throw err;
+  }
+}
+
+async function summaryNode(state: typeof AgentState.State) {
+  console.log("[GTM-Agent] Summary node started — calling LLM...");
+  try {
+    const model = createModel();
+    const response = await model.invoke([
+      new SystemMessage(ORCHESTRATOR_PROMPT),
+      new HumanMessage(`Data Agent:\n${state.dataOutput}\n\nBusiness Agent:\n${state.businessOutput}\n\nPM Agent:\n${state.pmOutput}\n\nWrite an executive summary.`),
+    ]);
+    const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+    console.log(`[GTM-Agent] Summary complete (${content.length} chars)`);
+    return { summary: content };
+  } catch (err: any) {
+    console.error("[GTM-Agent] Summary FAILED:", err.message || err);
+    throw err;
+  }
 }
 
 // ── Graph Builder ─────────────────────────────────
@@ -196,16 +221,18 @@ export function createGraph() {
     .addNode("data", dataAgentNode)
     .addNode("business", businessAgentNode)
     .addNode("pm", pmAgentNode)
+    .addNode("summary", summaryNode)
     .addEdge(START, "orchestrator")
     .addConditionalEdges("orchestrator", routeAfterOrchestrator, {
       data: "data",
       business: "business",
       pm: "pm",
-      [END]: END,
+      summary: "summary",
     })
     .addEdge("data", "business")
     .addEdge("business", "pm")
-    .addEdge("pm", "orchestrator")
+    .addEdge("pm", "summary")
+    .addEdge("summary", END)
     .compile({ checkpointer });
 
   return graph;
@@ -213,33 +240,47 @@ export function createGraph() {
 
 // ── Streaming Helper ──────────────────────────────
 export async function* streamWorkflow(query: string) {
+  console.log("[GTM-Agent] streamWorkflow started for query:", query.slice(0, 80));
   const graph = createGraph();
   const config = { configurable: { thread_id: `gtm-${Date.now()}` } };
 
   // Emit initial state
   yield { event: "orchestrator_start", data: { query } };
 
-  for await (const chunk of await graph.stream(
-    { query },
-    { ...config, streamMode: "updates" as const }
-  )) {
-    // chunk is { nodeName: { ...stateUpdates } }
-    const [nodeName, update] = Object.entries(chunk)[0];
-    yield {
-      event: `${nodeName}_update`,
-      data: update,
-    };
+  try {
+    for await (const chunk of await graph.stream(
+      { query },
+      { ...config, streamMode: "updates" as const }
+    )) {
+      // chunk is { nodeName: { ...stateUpdates } }
+      const [nodeName, update] = Object.entries(chunk)[0];
+      console.log(`[GTM-Agent] Node "${nodeName}" yielded update:`, Object.keys(update).join(", "));
+      yield {
+        event: `${nodeName}_update`,
+        data: update,
+      };
+    }
+  } catch (err: any) {
+    console.error("[GTM-Agent] Stream FAILED:", err.message || err);
+    yield { event: "error", data: { message: err.message || "Workflow failed" } };
+    return;
   }
 
   // Get final state for summary
-  const finalState = await graph.invoke({ query }, config);
-  yield {
-    event: "workflow_complete",
-    data: {
-      summary: finalState.summary,
-      dataOutput: finalState.dataOutput,
-      businessOutput: finalState.businessOutput,
-      pmOutput: finalState.pmOutput,
-    },
-  };
+  try {
+    const finalState = await graph.invoke({ query }, config);
+    console.log("[GTM-Agent] Final state retrieved, summary length:", (finalState.summary || "").length);
+    yield {
+      event: "workflow_complete",
+      data: {
+        summary: finalState.summary,
+        dataOutput: finalState.dataOutput,
+        businessOutput: finalState.businessOutput,
+        pmOutput: finalState.pmOutput,
+      },
+    };
+  } catch (err: any) {
+    console.error("[GTM-Agent] Final state FAILED:", err.message || err);
+    yield { event: "error", data: { message: err.message || "Failed to retrieve final state" } };
+  }
 }

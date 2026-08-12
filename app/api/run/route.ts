@@ -25,6 +25,8 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     let isDone = false;
 
+    console.log("[GTM-Agent] API route invoked with query:", query.slice(0, 80));
+
     const stream = new ReadableStream({
       async start(controller) {
         const send = (data: unknown) => {
@@ -34,16 +36,20 @@ export async function POST(request: NextRequest) {
         try {
           for await (const event of streamWorkflow(query)) {
             if (isDone) break;
+            console.log("[GTM-Agent] Sending event:", (event as any).event);
             send(event);
           }
+          console.log("[GTM-Agent] Workflow stream complete");
           send({ event: "done" });
         } catch (err: any) {
+          console.error("[GTM-Agent] API stream error:", err.message || err);
           send({ event: "error", data: { message: err.message || "Workflow failed" } });
         } finally {
           controller.close();
         }
       },
       cancel() {
+        console.log("[GTM-Agent] Stream cancelled by client");
         isDone = true;
       },
     });
