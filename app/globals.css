@@ -381,19 +381,109 @@ label, .label-caps {
   color: var(--on-surface);
 }
 
-.agent-card-body ul {
+.markdown-content {
+  color: inherit;
+}
+
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content pre,
+.markdown-content blockquote,
+.markdown-content table {
+  margin: 0 0 var(--space-sm);
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  color: var(--deep-earth);
+  margin: var(--space-sm) 0 var(--space-xs);
+  line-height: 1.35;
+}
+
+.markdown-content h1 { font-size: 1.2rem; }
+.markdown-content h2 { font-size: 1.1rem; }
+.markdown-content h3 { font-size: 1rem; }
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.2rem;
+}
+
+.markdown-content li {
+  margin-bottom: 0.25rem;
+}
+
+.markdown-content li::marker {
+  color: var(--primary-container);
+}
+
+.markdown-content code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+  background: var(--surface-container-low);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.25rem;
+}
+
+.markdown-content pre {
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius);
+  padding: var(--space-sm);
+  overflow-x: auto;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid var(--primary-container);
+  padding-left: var(--space-sm);
+  color: var(--on-surface-variant);
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--outline-variant);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: var(--surface-container-low);
+}
+
+.agent-card-body > ul {
   list-style: none;
   padding: 0;
 }
 
-.agent-card-body li {
+.agent-card-body > li {
   padding: 2px 0;
   display: flex;
   align-items: flex-start;
   gap: var(--space-xxs);
 }
 
-.agent-card-body li::before {
+.agent-card-body > li::before {
   content: "▸";
   color: var(--primary-container);
   flex-shrink: 0;

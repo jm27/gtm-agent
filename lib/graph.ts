@@ -3,6 +3,9 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { Annotation } from "@langchain/langgraph";
 
+const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_DATE_CONTEXT = `Current date context: ${CURRENT_YEAR}. Treat this as the present year.`;
+
 // ── State ──────────────────────────────────────────
 export const AgentState = Annotation.Root({
   query: Annotation<string>(),
@@ -20,6 +23,11 @@ export const AgentState = Annotation.Root({
 
 // ── Agent Prompts ──────────────────────────────────
 const DATA_PROMPT = `You are a market intelligence agent. Your output feeds directly into business strategy — be precise, data-heavy, and actionable.
+
+Data freshness requirements:
+- Use ${CURRENT_YEAR} as the baseline "current" year for all market numbers.
+- If exact ${CURRENT_YEAR} values are unavailable, provide a clearly labeled estimate for ${CURRENT_YEAR} or ${CURRENT_YEAR + 1}.
+- Do not present ${CURRENT_YEAR - 1} or older values as current.
 
 Given a GTM scenario, produce a structured market analysis with these sections:
 
@@ -44,6 +52,10 @@ Given a GTM scenario, produce a structured market analysis with these sections:
 Be specific with numbers. If you must estimate, use ranges (e.g., "$5-8B"). No fluff. Every section should earn its space.`;
 
 const BUSINESS_PROMPT = `You are a business strategy agent. You receive market intelligence from the Data Agent. Your job is to turn raw data into a sharp, executable GTM strategy.
+
+Data freshness requirements:
+- Ground strategy in the provided market data and preserve its ${CURRENT_YEAR}+ time context.
+- Do not restate outdated years as current.
 
 Given the market intelligence, produce:
 
@@ -71,6 +83,10 @@ Be specific. Cite the data. This strategy will be handed to a PM to build a spri
 
 const PM_PROMPT = `You are a project management agent. You receive a business strategy from the Business Agent. Your job is to build a concrete, week-by-week execution plan that a team can start on Monday.
 
+Data freshness requirements:
+- Keep timeline assumptions aligned with ${CURRENT_YEAR}+ planning.
+- Do not anchor the plan on outdated years.
+
 Given the strategy, produce:
 
 ## 6-Week Sprint Plan
@@ -95,6 +111,10 @@ Given the strategy, produce:
 Be concrete. Include dollar amounts, counts, dates. This is the plan someone executes — not a PowerPoint slide.`;
 
 const ORCHESTRATOR_PROMPT = `You are a GTM orchestrator. You have received completed outputs from three specialized agents: Data (market intelligence), Business (strategy), and PM (execution plan).
+
+Data freshness requirements:
+- Preserve and reinforce ${CURRENT_YEAR}+ assumptions from upstream agent outputs.
+- If any upstream claim is clearly outdated, note it briefly instead of repeating it as current fact.
 
 Your ONLY job is to synthesize these into a tight executive summary. Do not add new information. Do not re-analyze. Summarize what was produced.
 
@@ -150,7 +170,7 @@ async function dataAgentNode(state: typeof AgentState.State) {
     const model = createModel();
     const response = await model.invoke([
       new SystemMessage(DATA_PROMPT),
-      new HumanMessage(`Analyze this GTM scenario:\n\n${state.query}`),
+      new HumanMessage(`${CURRENT_DATE_CONTEXT}\n\nAnalyze this GTM scenario:\n\n${state.query}`),
     ]);
     const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
     console.log(`[GTM-Agent] Data agent complete (${content.length} chars)`);
@@ -167,7 +187,7 @@ async function businessAgentNode(state: typeof AgentState.State) {
     const model = createModel();
     const response = await model.invoke([
       new SystemMessage(BUSINESS_PROMPT),
-      new HumanMessage(`Market intelligence:\n${state.dataOutput}\n\nOriginal scenario: ${state.query}\n\nBuild a GTM strategy.`),
+      new HumanMessage(`${CURRENT_DATE_CONTEXT}\n\nMarket intelligence:\n${state.dataOutput}\n\nOriginal scenario: ${state.query}\n\nBuild a GTM strategy.`),
     ]);
     const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
     console.log(`[GTM-Agent] Business agent complete (${content.length} chars)`);
@@ -184,24 +204,24 @@ async function pmAgentNode(state: typeof AgentState.State) {
     const model = createModel();
     const response = await model.invoke([
       new SystemMessage(PM_PROMPT),
-      new HumanMessage(`Business strategy:\n${state.businessOutput}\n\nOriginal scenario: ${state.query}\n\nBuild an execution plan.`),
+      new HumanMessage(`${CURRENT_DATE_CONTEXT}\n\nBusiness strategy:\n${state.businessOutput}\n\nOriginal scenario: ${state.query}\n\nBuild an execution plan.`),
     ]);
     const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
     console.log(`[GTM-Agent] PM agent complete (${content.length} chars)`);
-    return { pmOutput: content, currentAgent: "summary" };
+    return { pmOutput: content, currentAgent: "summarize" };
   } catch (err: any) {
     console.error("[GTM-Agent] PM agent FAILED:", err.message || err);
     throw err;
   }
 }
 
-async function summaryNode(state: typeof AgentState.State) {
+async function summarizeNode(state: typeof AgentState.State) {
   console.log("[GTM-Agent] Summary node started — calling LLM...");
   try {
     const model = createModel();
     const response = await model.invoke([
       new SystemMessage(ORCHESTRATOR_PROMPT),
-      new HumanMessage(`Data Agent:\n${state.dataOutput}\n\nBusiness Agent:\n${state.businessOutput}\n\nPM Agent:\n${state.pmOutput}\n\nWrite an executive summary.`),
+      new HumanMessage(`${CURRENT_DATE_CONTEXT}\n\nData Agent:\n${state.dataOutput}\n\nBusiness Agent:\n${state.businessOutput}\n\nPM Agent:\n${state.pmOutput}\n\nWrite an executive summary.`),
     ]);
     const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
     console.log(`[GTM-Agent] Summary complete (${content.length} chars)`);
@@ -221,18 +241,18 @@ export function createGraph() {
     .addNode("data", dataAgentNode)
     .addNode("business", businessAgentNode)
     .addNode("pm", pmAgentNode)
-    .addNode("summary", summaryNode)
+    .addNode("summarize", summarizeNode)
     .addEdge(START, "orchestrator")
     .addConditionalEdges("orchestrator", routeAfterOrchestrator, {
       data: "data",
       business: "business",
       pm: "pm",
-      summary: "summary",
+      summarize: "summarize",
     })
     .addEdge("data", "business")
     .addEdge("business", "pm")
-    .addEdge("pm", "summary")
-    .addEdge("summary", END)
+    .addEdge("pm", "summarize")
+    .addEdge("summarize", END)
     .compile({ checkpointer });
 
   return graph;

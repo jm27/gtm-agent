@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { scenarios, type Scenario, type AgentOutput } from "@/lib/scenarios";
 
 type Step = "idle" | "orchestrating" | "running" | "done";
@@ -20,6 +22,16 @@ const AGENTS = [
   { id: "business", label: "Business Agent", icon: "💼", color: "business" },
   { id: "pm", label: "Project Agent", icon: "📋", color: "pm" },
 ];
+
+function MarkdownOutput({ content }: { content: string }) {
+  return (
+    <div className="markdown-content">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 export default function Home() {
   const [step, setStep] = useState<Step>("idle");
@@ -279,9 +291,9 @@ export default function Home() {
                 </div>
                 <div className="agent-card-body">
                   {agent.output ? (
-                    <div style={{ whiteSpace: "pre-wrap" }}>
-                      {agent.output}
-                      {agent.streaming && <span className="streaming-cursor" />}
+                    <div>
+                      <MarkdownOutput content={agent.output} />
+                      {agent.streaming && <span className="streaming-cursor" aria-hidden="true" />}
                     </div>
                   ) : (
                     <div style={{ color: "var(--text-muted)" }}>Generating...</div>
@@ -298,7 +310,9 @@ export default function Home() {
                 <span>🧠</span>
                 <span>Orchestrator Summary</span>
               </div>
-              <div className="agent-card-body">{summary}</div>
+              <div className="agent-card-body">
+                <MarkdownOutput content={summary} />
+              </div>
             </div>
           )}
 
